@@ -88,160 +88,73 @@ ply_dat
 
 # calculate the CV among replicates for different richnesses
 
-# use a function for this
+# write a function to calculate the coefficient of variation
 cv_func <- function(x) { (sd(x, na.rm = TRUE)/mean(x, na.rm = TRUE))*100 } 
 
-test <- 
+
+### low heterogeneity among replicates pools
+
+# calculate cv among replicate pools within each month and shore
+with_month <- 
   ply_dat %>%
   group_by(shore, month, species_richness, composition) %>%
-  summarise_at(vars(c("grid_squares", "totcover")), list(cv = ~cv_func(.)) ) %>%
+  summarise_at(vars(c("grid_squares", "totcover")), list(cv = ~cv_func(.), n = ~n()) ) %>%
   ungroup()
 
-ggplot(data = test,
+ggplot(data = with_month,
        mapping = aes(x = species_richness, y = totcover_cv, colour = month)) +
   geom_point() +
   geom_smooth(method = "lm", se = FALSE) +
   facet_wrap(~shore, scales = "free") +
   theme_classic()
 
+ggplot(data = with_month,
+       mapping = aes(x = month, y = grid_squares_cv)) +
+  geom_point() +
+  facet_wrap(~shore, scales = "free") +
+  theme_classic()
+
+# calculate mean cv among replicate pools across months within each shore
+mean_month <- 
+  ply_dat %>%
+  group_by(shore, month, species_richness, composition) %>%
+  summarise(totcover_cv = cv_func(totcover)) %>%
+  ungroup() %>%
+  group_by(shore, species_richness, composition) %>%
+  summarise(totcover_cv = mean(totcover_cv, na.rm = TRUE) ) %>%
+  ungroup()
+
+ggplot(data = mean_month,
+       mapping = aes(x = species_richness, y = totcover_cv)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~shore, scales = "free") +
+  theme_classic()
+
+
+### high heterogeneity among replicate pools from different shores
+
+mean_shore <- 
+  ply_dat %>%
+  group_by(shore, month, species_richness, composition) %>%
+  summarise_at(vars(c("totcover")), ~mean(., na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(shore, species_richness, composition) %>%
+  summarise(totcover = mean(totcover, na.rm = TRUE) ) %>%
+  ungroup() %>%
+  group_by(species_richness, composition) %>%
+  summarise(totcover_cv = cv_func(totcover)) %>%
+  ungroup()
+
+ggplot(data = mean_shore,
+       mapping = aes(x = species_richness, y = totcover_cv)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme_classic()
 
 
 
-
-
-# Code for analyses of rock pool data from Plymouth field experiment 2007-2008
-# Two sites: Challaborough and Kingsand, UK
-# Three sampling times: March, July, September (all 2008)
-#
-# Code initiated 2012
-#
-# Code history
-# 14-06-03: code modified by Bagchi in order to include Month as a continuous
-# numerical variable. New code included to make predictions.
-#
-# 19-12-06: reviving the effort to write a manuscript.
-
-rm(list=ls(all=TRUE))
-
-# set working directory
-setwd("C:/Users/james/OneDrive/PhD_Gothenburg/Plymouth_rock_pools")
-
-# install libraries
-library(lme4)
-library(car)
-library(ggplot2)
-library(plyr)
-library(pbkrtest)
-library(Hmisc)
-library(vegan)
-library(lattice)
-library(tidyverse)
-library(broom)
-
-# read in the raw data
-rdat<- read.csv(here("data/plymouth_rockpool_data.csv"), sep=";")
-
-#dim(rdat)
-summary(rdat)
-
-#str(rdat)
-#View(rdat)
-
-plot(jitter(rdat$sargassum), jitter(rdat$ceramium))
-plot(jitter(rdat$f_serratus), jitter(rdat$ceramium))
-plot(jitter(rdat$sargassum), jitter(rdat$u_lactuca + rdat$u_intestinalis + rdat$u_linza))
-plot(jitter(rdat$f_serratus), jitter(rdat$u_lactuca + rdat$u_intestinalis + rdat$u_linza))
-
-ggplot(subset(rdat, f_serratus > 1), aes(x = f_serratus, y = ceramium)) +
-  geom_point()
-dim(rdat)
-dim(subset(rdat, f_serratus > 1))
-summary(subset(rdat, f_serratus > 1))
-
-
-# reorder composition and month data, so the order of the levels make more sense
-levels(rdat$composition)
-rdat$composition <- factor(rdat$composition, levels=c('All', 'FLB', 'SFB', 'SFL', 'SLB', 'B', 'F', 'L', 'S', 'None'))
-rdat$month <- factor(rdat$month, levels=c('March', 'July', 'September'))
-
-### The code below is redundant code, in which the levels with the composition variable 
-### were renamed. 
-# Renaming the levels of the 'composition' variable. in the imported read.csv file, the 
-# levels refer to the species *not* removed from the pool (e.g. FLB means S was removed). 
-# The levels are here remaned to refer to the species removed (e.g. FLB means FLB was removed). 
-# rdat$composition<- revalue(rdat$composition, c("All"="none", "FLB"="S", "SLB"="F", "SFB"="L", "SFL"="B", "B"="SFL", "L"="SFB", "F"="SLB", "S"="FLB", "None"="all"))
-# checking that the 'revalue' function does what I want
-# mydata_raw$composition[1:20]
-# rdat$composition[1:20]
-
-# Columns for the cover of some taxa are not numeric. Fixing that:
-rdat$grid_squares<- as.numeric(rdat$grid_squares)
-rdat$red_crusts<- as.numeric(rdat$red_crusts)
-rdat$l_saccharina<- as.numeric(rdat$l_saccharina)
-rdat$dictyota_dicotoma<- as.numeric(rdat$dictyota_dicotoma)
-rdat$diatoms<- as.numeric(rdat$diatoms)
-
-# Code to aggregate data, because some pools have data in two rows. 
-sumfunction <- function(x){
-  x <- x[!is.na(x)]
-  if(length(x) ==0) return(0)  
-  if(any(x =='p')) {
-    s <- sum(as.numeric(as.character(x[x!='p'])))
-    s <- ifelse(s==0, 'p', s)}
-  else
-    s <- sum(as.numeric(as.character(x)))
-  return(s)} 
-
-rdat2<- with(rdat, aggregate(rdat[, 6:48], list(month=month, shore=shore, 
-                                                pool=pool, composition=composition, removed=removed), FUN = sumfunction))
-
-rdat2 %>% head()
-
-# Checking the new data frame
-#dim(rdat2) # 249 rows, 48 columns (rdat: 319 rows, 48 columns)
-#str(rdat2)
-
-# Check unique values for the different variables
-lapply(rdat2, function(x) { unique(x) })
-
-# Have a look at the data
-View(rdat2)
-
-# What variables do we have?
-colnames(rdat2)
-
-# Code new variables for this analysis
-tot_spp <- 4
-
-ply_dat <- rdat2 %>%
-  mutate(species_richness = (tot_spp - removed) ) %>%
-  select(shore, pool, grid_squares, month, composition, 
-         removed, species_richness, totcover, cover_nocrusts) %>%
-  as_tibble()
-
-# Convert factors to characters
-ply_dat <- ply_dat %>% mutate_if(is.factor, as.character)
-
-# Reorder these data so that it makes more sense
-ply_dat <- ply_dat %>% arrange(shore, month, composition, removed, species_richness, pool)
-
-# Have a look at the data again
-ply_dat %>% View()
-
-# How many species were removed?
-ply_dat$removed %>% unique()
-
-# We want a new column with either a mixture or monoculture variable
-ply_dat <- ply_dat %>%
-  mutate(mono_mix = if_else(removed == "3", "monoculture",
-                            if_else(removed == "4", "control", 
-                                    if_else(removed == "0", "max_mixture", "mixture")))) %>%
-  select(shore, pool, grid_squares, month, composition, mono_mix, removed, species_richness, totcover, cover_nocrusts)
-
-ply_dat %>% View()
-
-
-### Test out some code
+### Test out some code for scaling up as previously:
 
 # Remove the composition = None data
 test_dat <- ply_dat %>% filter(composition != "None")
