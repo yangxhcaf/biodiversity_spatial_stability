@@ -1,3 +1,114 @@
+
+# Title: Spatial stability in Plymouth rock pools
+
+# load relevant libraries
+library(readr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(broom)
+library(RColorBrewer)
+library(viridis)
+library(here)
+
+# read in the data
+ply_dat_raw <- read_delim( here("data/plymouth_rockpool_data.csv"), delim = ";" )
+
+# duplicate this data
+ply_dat <- ply_dat_raw
+
+# check the variable structure
+str(ply_dat)
+
+# view the data
+View(ply_dat)
+
+# aggregate the data because some rows have multiple measurements
+
+# set up a variable names vector
+var_names <- names(ply_dat)
+
+# set up a vector of id_vars
+id_vars <- c("month", "shore", "pool", "composition", "removed")
+
+# set up a vector of response aggregate variables
+agg_vars <- var_names[!(names(ply_dat) %in% id_vars)]
+
+# aggregate pools with multiple measurements by summing them
+ply_dat <- ply_dat %>%
+  group_by_at(id_vars) %>%
+  summarise_at(vars(agg_vars), ~sum(., na.rm = TRUE)) %>%
+  ungroup()
+
+# matches with Lars and Bagchi's script results
+
+
+# create a few extra variables for this analysis
+
+# create a species richness variable
+# select only relevant columns
+tot_spp <- 4
+
+ply_dat <- 
+  ply_dat %>%
+  mutate(species_richness = (tot_spp - removed) ) %>%
+  select(shore, pool, grid_squares, month, composition, 
+         removed, species_richness, totcover, cover_nocrusts)
+
+# reorder these data so that it makes more sense
+ply_dat <- 
+  ply_dat %>% 
+  arrange(shore, month, composition, removed, species_richness, pool)
+
+# have a look at the data again
+ply_dat %>% View()
+
+# how many species were removed?
+ply_dat$removed %>% unique()
+
+# create a new mixture/monoculture column
+# reorder the columns again
+ply_dat <- 
+  ply_dat %>%
+  mutate(mono_mix = if_else(removed == "3", "monoculture",
+                            if_else(removed == "4", "control", 
+                                    if_else(removed == "0", "max_mixture", 
+                                            "mixture")))) %>%
+  select(shore, pool, grid_squares, month, composition, mono_mix, removed, species_richness, totcover, cover_nocrusts)
+
+ply_dat %>% View()
+
+# remove the composition = "None" treatment as this is a general control
+ply_dat <- 
+  ply_dat %>% filter(composition != "None")
+
+ply_dat
+
+
+# calculate the CV among replicates for different richnesses
+
+# use a function for this
+cv_func <- function(x) { (sd(x, na.rm = TRUE)/mean(x, na.rm = TRUE))*100 } 
+
+test <- 
+  ply_dat %>%
+  group_by(shore, month, species_richness, composition) %>%
+  summarise_at(vars(c("grid_squares", "totcover")), list(cv = ~cv_func(.)) ) %>%
+  ungroup()
+
+ggplot(data = test,
+       mapping = aes(x = species_richness, y = totcover_cv, colour = month)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~shore, scales = "free") +
+  theme_classic()
+
+
+
+
+
+
 # Code for analyses of rock pool data from Plymouth field experiment 2007-2008
 # Two sites: Challaborough and Kingsand, UK
 # Three sampling times: March, July, September (all 2008)
@@ -28,7 +139,7 @@ library(tidyverse)
 library(broom)
 
 # read in the raw data
-rdat<- read.csv("All months in one sheet.csv", sep=";")
+rdat<- read.csv(here("data/plymouth_rockpool_data.csv"), sep=";")
 
 #dim(rdat)
 summary(rdat)
@@ -84,7 +195,7 @@ sumfunction <- function(x){
 rdat2<- with(rdat, aggregate(rdat[, 6:48], list(month=month, shore=shore, 
                                                 pool=pool, composition=composition, removed=removed), FUN = sumfunction))
 
-rdat2
+rdat2 %>% head()
 
 # Checking the new data frame
 #dim(rdat2) # 249 rows, 48 columns (rdat: 319 rows, 48 columns)
