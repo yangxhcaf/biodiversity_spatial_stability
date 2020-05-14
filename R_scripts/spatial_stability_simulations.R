@@ -1,6 +1,8 @@
 
 # Title: simulation of spatial stability in heterogenous environments
 
+# Code adapted from: https://github.com/FabianRoger/Bacteria_BEF_Scale/blob/master/Simulations.Rmd
+
 # load relevant libraries
 library(dplyr)
 library(tidyr)
@@ -42,7 +44,7 @@ spp_traits
 # 2 = Weighted mean (# partial selection effect)
 # 3 = Random dominance (# dominance that is random with respect to function)
 
-Scenario <- 3
+Scenario <- 2
 
 plot_values <- sapply(env, #for each environment
                       function(x) {
@@ -147,8 +149,9 @@ func_values <-
 
 # plot some of these data
 
-ggplot(data = func_values,
+ggplot(data = func_values[sample(seq(1:nrow(func_values)), size = 10000),  ],
        mapping = aes(x = richness, y = functioning_cv, colour = as.character(envnum))) +
+  geom_jitter(alpha = 0.1, width = 0.1) +
   geom_smooth(method = "lm") +
   scale_colour_viridis_d() +
   theme_classic()
