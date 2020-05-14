@@ -38,18 +38,32 @@ spp_traits[1:nrow(spp_traits), 1:ncol(spp_traits)] <-
 spp_traits
 
 
+# 1 = Dominance (# pure selection effect and perfect environmental sorting)
+# 2 = Weighted mean (# partial selection effect)
+# 3 = Random dominance (# dominance that is random with respect to function)
+
+Scenario <- 3
+
 plot_values <- sapply(env, #for each environment
                       function(x) {
                         lapply(spec_comb, #for each richness level
                                function(y) {
                                  apply(y, 2, function(z){ #for each species combination
+                                   if(Scenario == 1){
+                                     max(spp_traits[x,z])
+                                   } else if(Scenario == 2){
                                      mean(sum(spp_traits[x,z]^2) / abs(sum(spp_traits[x,z])))
+                                   } else {
+                                     sample(spp_traits[x,z], size = 1)
+                                   } 
                                  }
                                  )
                                }
                         )
                       }
 )
+
+
 
 plot_values_df <- 
   tibble(
