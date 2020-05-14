@@ -12,8 +12,8 @@ library(viridis)
 library(here)
 
 # define number of species and environments
-specnum <- 3
-envnum <- 3
+specnum <- 5
+envnum <- 5
 
 # set up species matrix
 spec <- paste("species_", c(1:specnum), sep = "")
@@ -86,7 +86,7 @@ land_comb <-
   ungroup()
 
 land_comb <- 
-  split(select(land_dat, -heterogeneity), land_dat$heterogeneity) %>%
+  split(select(land_comb, -heterogeneity), land_comb$heterogeneity) %>%
   lapply(function(x) {x %>% 
     mutate(n = rep(c(1:envnum), (n()/envnum) )) %>%
     select(-patch) %>%
@@ -115,12 +115,30 @@ func_values <-
     })
   })
 
-func_values <- bind_rows( unlist(func_values, recursive = FALSE), .id = "landscape_id" ) %>%
-  as_tibble()
+# bind these data into a single dataframe
+# remove highest richness level as this is unreplicated (combinations wise)
+func_values <- 
+  bind_rows( unlist(func_values, recursive = FALSE), .id = "landscape_id" ) %>%
+  as_tibble() %>%
+  filter(richness < specnum)
 
-func_values$landscape_id %>% 
-  unique() %>% 
-  length()
+# add small random errors to both the functioning_mean and functioning_sd
+# calculate coefficient of variation
+func_values <- 
+  func_values %>%
+  mutate(functioning_mean = functioning_mean + rnorm(n(), 0, 0.01),
+         functioning_sd = functioning_sd + rnorm(n(), 0, 0.01)) %>%
+  mutate(functioning_cv = (functioning_sd/functioning_mean)*100 )
+
+
+# plot some of these data
+
+ggplot(data = func_values,
+       mapping = aes(x = richness, y = functioning_cv, colour = as.character(envnum))) +
+  geom_smooth(method = "lm") +
+  scale_colour_viridis_d() +
+  theme_classic()
+
 
 
 
