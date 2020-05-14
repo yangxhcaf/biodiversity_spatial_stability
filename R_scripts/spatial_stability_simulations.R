@@ -64,86 +64,64 @@ plot_values_df <-
 
 plot_values_df
 
+
 ### landscapes
 
-land <- paste("env_", c(1:envnum), sep = "")
-land_comb <- rep(list(land), envnum) %>%
+land_comb <- paste("env_", c(1:envnum), sep = "")
+
+land_comb <- 
+  rep(list(land_comb), envnum) %>%
   expand.grid() %>%
   as_tibble() %>%
   mutate_all(~as.character(.))
 names(land_comb) <- paste("patch", c(1:envnum), sep = "_")
 
-land_dat <- land_comb %>%
-  mutate(landscape = seq_along(1:nrow(land_comb)))
-
-land_dat <- 
-  land_dat %>%
+land_comb <- 
+  land_comb %>%
+  mutate(landscape = seq_along(1:nrow(land_comb))) %>%
   gather(-landscape, key = "patch", value = "environment") %>%
   arrange(landscape) %>%
   group_by(landscape) %>%
   mutate(heterogeneity = unique(environment) %>% length() ) %>%
   ungroup()
 
-land_dat
+land_comb <- 
+  split(select(land_dat, -heterogeneity), land_dat$heterogeneity) %>%
+  lapply(function(x) {x %>% 
+    mutate(n = rep(c(1:envnum), (n()/envnum) )) %>%
+    select(-patch) %>%
+    spread(key = "landscape", value = "environment") %>%
+    select(-n) %>%
+    as.matrix() }
+    )  
+names(land_comb) <- paste0("het_", c(1:envnum))
 
-plot_values_df
-
-as.vector(DF[1,])
-
-# make a list to output functioning to
-land_dat <- split(select(land_dat, -landscape), land_dat$landscape)
-land_dat
-
-# make landscape combination dataframe
-as.vector(land_comb[1,])
-
-unname( unlist(land_comb[1,]) )
-
-rowMeans(plot_values_wide[,y])
-
-
-lapply(land_comb, function(x) { pull(x, environment) } )
-
-env_id <- pull(land_comb[[5]], environment)
-env_id
-
-land_comb[[5]]
-
-funcs <- plot_values_df %>% filter( environment %in% env_id )
-
-funcs
-
+# we have a list with different levels of heterogeneity all combinations of environments in columns
 plot_values_wide <- plot_values_df %>%
   spread(environment, functioning)
 
 
-env_values <- 
+func_values <- 
   lapply(land_comb, function(x) { #for all scales (1:5)
     apply(x, 2, function(y) { #for all environmental combinations
       
       df <- data.frame( #average functioning for this environment combination
         env_comb = paste0(y, collapse = " "),
-        envnum = length(y),
+        envnum = unique(y) %>% length(),
         richness = plot_values_wide$richness,
-        functioning = rowMeans(plot_values_wide[,y])
+        functioning_mean = rowMeans(plot_values_wide[, y]),
+        functioning_sd = apply(plot_values_wide[, y], 1, sd, na.rm = TRUE)
       )
     })
   })
 
-apply(x, 2, function(y) { #for all environmental combinations
-  
-  df <- data.frame( #average functioning for this environment combination
-    env_comb = paste0(y, collapse = " "),
-    envnum = length(y),
-    richness = plot_values_wide$richness,
-    functioning = rowMeans(plot_values_wide[,y])
-  )
-})
+func_values <- bind_rows( unlist(func_values, recursive = FALSE), .id = "landscape_id" ) %>%
+  as_tibble()
 
+func_values$landscape_id %>% 
+  unique() %>% 
+  length()
 
-
-
-sample_n(size = envnum, replace = FALSE, weight = NULL, .env = NULL)
 
 
 
