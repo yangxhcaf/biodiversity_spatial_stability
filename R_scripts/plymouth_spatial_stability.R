@@ -77,7 +77,8 @@ ply_dat <-
                                             "mixture")))) %>%
   select(shore, pool, grid_squares, month, composition, mono_mix, removed, species_richness, totcover, cover_nocrusts)
 
-ply_dat %>% View()
+ply_dat %>% 
+  View()
 
 # remove the composition = "None" treatment as this is a general control
 ply_dat <- 
@@ -85,6 +86,68 @@ ply_dat <-
 
 ply_dat
 
+
+### testing Wang and Loreau (2016)'s predictions
+
+ply_dat %>%
+  View()
+
+# calculate mean alpha diversity and gamma diversity across pool replicates within shore and treatment
+loc_reg_div <- 
+  ply_dat %>%
+  group_by(shore, composition) %>%
+  summarise(mean_alpha = mean(species_richness),
+            gamma_div = mean(species_richness)) %>%
+  ungroup()
+
+# calculate alpha cv
+alpha_cv <- 
+  ply_dat %>%
+  group_by(shore, composition, pool) %>%
+  summarise(alpha_cv = (sd(totcover, na.rm = TRUE)/mean(totcover, na.rm = TRUE)),
+            mean_totcover = mean(totcover, na.rm = TRUE) ) %>%
+  ungroup() %>%
+  group_by(shore, composition) %>%
+  summarise(alpha_cv = weighted.mean(alpha_cv, w = mean_totcover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(alpha_cv = (alpha_cv^2))
+
+
+# calculate gamma cv
+
+gamma_cv <- 
+  ply_dat %>%
+  group_by(shore, composition, month) %>%
+  summarise(gamma_cv = mean(totcover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(shore, composition) %>%
+  summarise(gamma_cv = sd(gamma_cv, na.rm = TRUE)/mean(gamma_cv, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(gamma_cv = (gamma_cv^2))
+
+# join the alpha and gamma cv data and calculate beta cv
+cv_scales <- 
+  full_join(alpha_cv, gamma_cv, by = c("shore", "composition")) %>%
+  mutate(beta_cv = (alpha_cv/gamma_cv))
+
+# join the loc_reg diversity to the cv_scales
+div_cv_scales <- 
+  full_join(loc_reg_div,
+            cv_scales,
+            by = c("shore", "composition"))
+
+div_cv_scales %>%
+  gather(alpha_cv, gamma_cv, beta_cv, key = "div", value = "cv") %>%
+  ggplot(data = .,
+         mapping = aes(x = mean_alpha, y = cv, colour = shore)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(~div, scales = "free") +
+  theme_classic()
+
+
+
+### spatial stability
 
 # calculate the CV among replicates for different richnesses
 
