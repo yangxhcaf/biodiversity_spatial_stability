@@ -92,10 +92,37 @@ ply_dat
 ply_dat %>%
   View()
 
+# within (w) or between shore (b)
+hier <- c("b")
+
+within <- 
+  list(c("shore", "composition"),
+       c("shore", "composition", "pool"),
+       c("shore", "composition"),
+       c("shore", "composition", "month"),
+       c("shore", "composition"),
+       c("shore", "composition"))
+
+between <- 
+  list(c("composition"),
+       c("composition", "pool"),
+       c("composition"),
+       c("composition", "month"),
+       c("composition"),
+       c("composition"))
+
+group_vars <- 
+  if (hier == "w") {
+    within
+  } else {
+    between
+  }
+
+
 # calculate mean alpha diversity and gamma diversity across pool replicates within shore and treatment
 loc_reg_div <- 
   ply_dat %>%
-  group_by(shore, composition) %>%
+  group_by_at(vars(group_vars[[1]])) %>%
   summarise(mean_alpha = mean(species_richness),
             gamma_div = mean(species_richness)) %>%
   ungroup()
@@ -103,11 +130,11 @@ loc_reg_div <-
 # calculate alpha cv
 alpha_cv <- 
   ply_dat %>%
-  group_by(shore, composition, pool) %>%
+  group_by_at(vars(group_vars[[2]])) %>%
   summarise(alpha_cv = (sd(totcover, na.rm = TRUE)/mean(totcover, na.rm = TRUE)),
             mean_totcover = mean(totcover, na.rm = TRUE) ) %>%
   ungroup() %>%
-  group_by(shore, composition) %>%
+  group_by_at(vars(group_vars[[3]])) %>%
   summarise(alpha_cv = weighted.mean(alpha_cv, w = mean_totcover, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(alpha_cv = (alpha_cv^2))
@@ -117,33 +144,41 @@ alpha_cv <-
 
 gamma_cv <- 
   ply_dat %>%
-  group_by(shore, composition, month) %>%
+  group_by_at(vars(group_vars[[4]])) %>%
   summarise(gamma_cv = mean(totcover, na.rm = TRUE)) %>%
   ungroup() %>%
-  group_by(shore, composition) %>%
+  group_by_at(vars(group_vars[[5]])) %>%
   summarise(gamma_cv = sd(gamma_cv, na.rm = TRUE)/mean(gamma_cv, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(gamma_cv = (gamma_cv^2))
 
 # join the alpha and gamma cv data and calculate beta cv
 cv_scales <- 
-  full_join(alpha_cv, gamma_cv, by = c("shore", "composition")) %>%
+  full_join(alpha_cv, gamma_cv, by = group_vars[[6]]) %>%
   mutate(beta_cv = (alpha_cv/gamma_cv))
 
 # join the loc_reg diversity to the cv_scales
 div_cv_scales <- 
   full_join(loc_reg_div,
             cv_scales,
-            by = c("shore", "composition"))
+            by = group_vars[[6]])
 
 div_cv_scales %>%
   gather(alpha_cv, gamma_cv, beta_cv, key = "div", value = "cv") %>%
   ggplot(data = .,
-         mapping = aes(x = mean_alpha, y = cv, colour = shore)) +
+         mapping = aes(x = mean_alpha, y = cv)) +
   geom_point() +
   geom_smooth(method = "lm") +
   facet_wrap(~div, scales = "free") +
   theme_classic()
+
+
+
+
+
+
+
+
 
 
 
