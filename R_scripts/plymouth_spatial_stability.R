@@ -109,10 +109,7 @@ ply_dat <-
 # create a test dataset to see if I can reproduce these metrics (Lamy et al. 2019)
 stab_test <- 
   ply_dat %>%
-  filter(composition == "B")
-
-stab_test %>%
-  View()
+  filter(composition == "All")
 
 # metacommunity variability (CVmc)
 
@@ -121,6 +118,7 @@ stab_test %>%
   summarise(total_cover = sum(total_cover, na.rm = TRUE)) %>%
   ungroup() %>%
   summarise(CVmc = (sd(total_cover, na.rm = TRUE)/mean(total_cover, na.rm = TRUE)))
+
 
 # metapopulation variability (CVmp)
 stab_test %>%
@@ -154,6 +152,49 @@ stab_test %>%
             patch_cover = mean(mean_cover, na.rm = TRUE)) %>%
   ungroup() %>%
   summarise(CVlp = weighted.mean(spp_pool_cv, w = patch_cover))
+
+
+### calculate synchrony values
+
+# average local-scale species synchrony: phi_SC_L
+full_join(stab_test %>%
+            group_by(pool) %>%
+            summarise(sd_patch = sd(total_cover, na.rm = TRUE)),
+          stab_test %>%
+            gather(foc_spp, key = "species", value = "cover") %>%
+            group_by(pool, species) %>%
+            summarise(sd_spp_patch = sd(cover, na.rm = TRUE)) %>%
+            ungroup() %>%
+            group_by(pool) %>%
+            summarise(sd_spp_pool = sum(sd_spp_patch, na.rm = TRUE)),
+          by = "pool") %>%
+  mutate(phi_SC_k = sd_patch/sd_spp_pool) %>%
+  summarise(phi_SC_L = weighted.mean(phi_SC_k, w = sd_spp_pool))
+  
+# spatial synchrony of species i: phi_i_LR
+# phi_i_LR <- sd_iT/colSums(sd_ik)
+
+stab_test %>%
+  gather(foc_spp, key = "species", value = "cover") %>%
+  group_by(species, month) %>%
+  summarise(cover = sum(cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(species) %>%
+  summarise(sppcv = (sd(cover, na.rm = TRUE)/mean(cover, na.rm = TRUE)),
+            mean_cover = mean(cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  pull(sppcv)
+
+stab_test %>%
+  gather(foc_spp, key = "species", value = "cover") %>%
+  group_by(pool, species) %>%
+  summarise(sd_spp_patch = sd(cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(species) %>%
+  summarise(sd_spp_patch = sum(sd_spp_patch, na.rm = TRUE)) %>%
+  pull(sd_spp_patch)
+
+# this requires a weighted average...
 
 
 ### Lamy et al. (2019) functions
