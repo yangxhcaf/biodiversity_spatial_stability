@@ -123,7 +123,6 @@ stab_dat[[1]]
 ### calculate stability at different scales
 out$part
 
-
 # metacommunity variability (CVmc)
 
 stab_dat[[1]] %>%
@@ -135,6 +134,9 @@ stab_dat[[1]] %>%
 # metapopulation variability (CVmp)
 stab_dat[[1]] %>%
   gather(spp_5, key = "species", value = "cover") %>%
+  group_by(species, month) %>%
+  summarise(cover = sum(cover, na.rm = TRUE)) %>%
+  ungroup() %>%
   group_by(species) %>%
   summarise(sppcv = (sd(cover, na.rm = TRUE)/mean(cover, na.rm = TRUE)),
             mean_cover = mean(cover, na.rm = TRUE)) %>%
@@ -158,9 +160,10 @@ stab_dat[[1]] %>%
             mean_cover = mean(cover, na.rm = TRUE) ) %>%
   ungroup() %>%
   group_by(pool) %>%
-  summarise(spp_pool_cv = weighted.mean(spp_cv, w = mean_cover, na.rm = TRUE)) %>%
+  summarise(spp_pool_cv = weighted.mean(spp_cv, w = mean_cover, na.rm = TRUE),
+            patch_cover = mean(mean_cover, na.rm = TRUE)) %>%
   ungroup() %>%
-  summarise(CVlp = mean(spp_pool_cv))
+  summarise(CVlp = weighted.mean(spp_pool_cv, w = patch_cover))
 
 
 
