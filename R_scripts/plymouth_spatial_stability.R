@@ -22,7 +22,7 @@ ply_dat <- ply_dat_raw
 str(ply_dat)
 
 # view the data
-View(ply_dat)
+# View(ply_dat)
 
 # aggregate the data because some rows have multiple measurements
 
@@ -44,6 +44,23 @@ ply_dat <- ply_dat %>%
 # matches with Lars and Bagchi's script results
 
 
+# examine which 'species' classes have notable cover
+# list of 'species' classes where at least one data point has more than 5 % cover
+
+spp_5 <-
+  ply_dat %>%
+  mutate_at(vars(agg_vars[agg_vars != "grid_squares"]), ~(./totcover)*100) %>%
+  select(agg_vars[!(agg_vars %in% c("grid_squares", "totcover", "cover_nocrusts", "bare rock"))] ) %>%
+  lapply(., function(x) { 
+    if_else(x > 5, 1, 0) %>% sum()
+    } ) %>%
+  bind_rows() %>%
+  gather() %>%
+  filter(value > 0) %>%
+  pull(key)
+
+spp_5
+
 # create a few extra variables for this analysis
 
 # create a species richness variable
@@ -53,19 +70,11 @@ tot_spp <- 4
 ply_dat <- 
   ply_dat %>%
   mutate(species_richness = (tot_spp - removed) ) %>%
-  select(shore, pool, grid_squares, month, composition, 
-         removed, species_richness, totcover, cover_nocrusts)
+  select(id_vars, grid_squares, species_richness, totcover, cover_nocrusts, spp_5)
 
-# reorder these data so that it makes more sense
-ply_dat <- 
-  ply_dat %>% 
-  arrange(shore, month, composition, removed, species_richness, pool)
+ply_dat %>% 
+  View()
 
-# have a look at the data again
-ply_dat %>% View()
-
-# how many species were removed?
-ply_dat$removed %>% unique()
 
 # create a new mixture/monoculture column
 # reorder the columns again
@@ -74,8 +83,7 @@ ply_dat <-
   mutate(mono_mix = if_else(removed == "3", "monoculture",
                             if_else(removed == "4", "control", 
                                     if_else(removed == "0", "max_mixture", 
-                                            "mixture")))) %>%
-  select(shore, pool, grid_squares, month, composition, mono_mix, removed, species_richness, totcover, cover_nocrusts)
+                                            "mixture"))))
 
 ply_dat %>% 
   View()
@@ -85,6 +93,74 @@ ply_dat <-
   ply_dat %>% filter(composition != "None")
 
 ply_dat
+
+
+
+### stability across different levels of organisation
+
+# create a total cover variables from the constituent species
+ply_dat$total_cover <- 
+  ply_dat %>%
+  select(spp_5) %>%
+  rowSums()
+
+# check this new cover variable
+# it is extremely similar so we will go with it
+ply_dat %>%
+  select(totcover, total_cover) %>%
+  mutate(cov_diff = totcover - total_cover) %>%
+  filter(cov_diff > 0)
+
+
+# collapse the data into a list by shore and composition
+stab_dat <- 
+  ply_dat %>%
+  mutate(shore_comp_id = paste(shore, composition, sep = "_")) %>%
+  split(., .$shore_comp_id)
+
+stab_dat[[1]]
+
+### calculate stability at different scales
+
+# metacommunity variability (CVmc)
+
+stab_dat[[1]] %>%
+  group_by(month) %>%
+  summarise(total_cover = sum(total_cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  summarise(CVmc = (sd(total_cover, na.rm = TRUE)/mean(total_cover, na.rm = TRUE)))
+
+# metapopulation variability (CVmp)
+stab_dat[[1]] %>%
+  gather(spp_5, key = "species", value = "cover") %>%
+  group_by(species) %>%
+  summarise(sppcv = (sd(cover, na.rm = TRUE)/mean(cover, na.rm = TRUE)),
+            mean_cover = mean(cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  summarise(CVmp = weighted.mean(sppcv, w = mean_cover, na.rm = TRUE))
+
+
+# local community variability (CVlc)
+stab_dat[[1]] %>%
+  group_by(pool) %>%
+  summarise(pool_cv = (sd(total_cover, na.rm = TRUE)/mean(total_cover, na.rm = TRUE)),
+            mean_cover = mean(total_cover, na.rm = TRUE) ) %>%
+  ungroup() %>%
+  summarise(CVlc = weighted.mean(pool_cv, w = mean_cover, na.rm = TRUE))
+
+# local population variability (CVlp)
+stab_dat[[1]] %>%
+  gather(spp_5, key = "species", value = "cover") %>%
+  group_by(pool, species) %>%
+  summarise(spp_cv = (sd(cover, na.rm = TRUE)/mean(cover, na.rm = TRUE)),
+            mean_cover = mean(cover, na.rm = TRUE) ) %>%
+  ungroup() %>%
+  group_by(pool) %>%
+  summarise(spp_pool_cv = weighted.mean(spp_cv, w = mean_cover, na.rm = TRUE)) %>%
+  ungroup() %>%
+  summarise(CVlp = mean(spp_pool_cv))
+
+
 
 
 ### testing Wang and Loreau (2016)'s predictions
