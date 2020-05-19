@@ -21,9 +21,6 @@ ply_dat <- ply_dat_raw
 # check the variable structure
 str(ply_dat)
 
-# view the data
-# View(ply_dat)
-
 # aggregate the data because some rows have multiple measurements
 
 # set up a variable names vector
@@ -36,7 +33,8 @@ id_vars <- c("month", "shore", "pool", "composition", "removed")
 agg_vars <- var_names[!(names(ply_dat) %in% id_vars)]
 
 # aggregate pools with multiple measurements by summing them
-ply_dat <- ply_dat %>%
+ply_dat <- 
+  ply_dat %>%
   group_by_at(id_vars) %>%
   summarise_at(vars(agg_vars), ~sum(., na.rm = TRUE)) %>%
   ungroup()
@@ -45,9 +43,13 @@ ply_dat <- ply_dat %>%
 
 
 # examine which 'species' classes have notable cover
-# list of 'species' classes where at least one data point has more than 5 % cover
 
-spp_5 <-
+# analyse only the focal species
+foc_spp <- 
+  c("sargassum", "bifurcaria", "f_serratus", "l_digitata")
+
+# analyse all species (or categories) with more than 5 cover in any data point
+foc_spp <-
   ply_dat %>%
   mutate_at(vars(agg_vars[agg_vars != "grid_squares"]), ~(./totcover)*100) %>%
   select(agg_vars[!(agg_vars %in% c("grid_squares", "totcover", "cover_nocrusts", "bare rock"))] ) %>%
@@ -59,7 +61,6 @@ spp_5 <-
   filter(value > 0) %>%
   pull(key)
 
-spp_5
 
 # create a few extra variables for this analysis
 
@@ -70,11 +71,7 @@ tot_spp <- 4
 ply_dat <- 
   ply_dat %>%
   mutate(species_richness = (tot_spp - removed) ) %>%
-  select(id_vars, grid_squares, species_richness, totcover, cover_nocrusts, spp_5)
-
-ply_dat %>% 
-  View()
-
+  select(id_vars, grid_squares, species_richness, totcover, cover_nocrusts, foc_spp)
 
 # create a new mixture/monoculture column
 # reorder the columns again
@@ -85,55 +82,49 @@ ply_dat <-
                                     if_else(removed == "0", "max_mixture", 
                                             "mixture"))))
 
-ply_dat %>% 
-  View()
 
 # remove the composition = "None" treatment as this is a general control
 ply_dat <- 
   ply_dat %>% filter(composition != "None")
 
-ply_dat
-
-
 
 ### stability across different levels of organisation
 
-# create a total cover variables from the constituent species
+# create a total cover variable from the constituent species
 ply_dat$total_cover <- 
   ply_dat %>%
-  select(spp_5) %>%
+  select(foc_spp) %>%
   rowSums()
 
-# check this new cover variable
-# it is extremely similar so we will go with it
-ply_dat %>%
-  select(totcover, total_cover) %>%
-  mutate(cov_diff = totcover - total_cover) %>%
-  filter(cov_diff > 0)
-
-
-# collapse the data into a list by shore and composition
-stab_dat <- 
+# sort data to match with Lamy et al.'s function
+ply_dat <-
   ply_dat %>%
-  mutate(shore_comp_id = paste(shore, composition, sep = "_")) %>%
-  split(., .$shore_comp_id)
+  arrange(shore, composition, pool, month)
 
-stab_dat[[1]]
 
 ### calculate stability at different scales
-out$part
+
+# my own functions to calculate these different quantities
+
+# create a test dataset to see if I can reproduce these metrics (Lamy et al. 2019)
+stab_test <- 
+  ply_dat %>%
+  filter(composition == "B")
+
+stab_test %>%
+  View()
 
 # metacommunity variability (CVmc)
 
-stab_dat[[1]] %>%
+stab_test %>%
   group_by(month) %>%
   summarise(total_cover = sum(total_cover, na.rm = TRUE)) %>%
   ungroup() %>%
   summarise(CVmc = (sd(total_cover, na.rm = TRUE)/mean(total_cover, na.rm = TRUE)))
 
 # metapopulation variability (CVmp)
-stab_dat[[1]] %>%
-  gather(spp_5, key = "species", value = "cover") %>%
+stab_test %>%
+  gather(foc_spp, key = "species", value = "cover") %>%
   group_by(species, month) %>%
   summarise(cover = sum(cover, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -143,9 +134,8 @@ stab_dat[[1]] %>%
   ungroup() %>%
   summarise(CVmp = weighted.mean(sppcv, w = mean_cover, na.rm = TRUE))
 
-
 # local community variability (CVlc)
-stab_dat[[1]] %>%
+stab_test %>%
   group_by(pool) %>%
   summarise(pool_cv = (sd(total_cover, na.rm = TRUE)/mean(total_cover, na.rm = TRUE)),
             mean_cover = mean(total_cover, na.rm = TRUE) ) %>%
@@ -153,8 +143,8 @@ stab_dat[[1]] %>%
   summarise(CVlc = weighted.mean(pool_cv, w = mean_cover, na.rm = TRUE))
 
 # local population variability (CVlp)
-stab_dat[[1]] %>%
-  gather(spp_5, key = "species", value = "cover") %>%
+stab_test %>%
+  gather(foc_spp, key = "species", value = "cover") %>%
   group_by(pool, species) %>%
   summarise(spp_cv = sd(cover, na.rm = TRUE)/mean(cover, na.rm = TRUE),
             mean_cover = mean(cover, na.rm = TRUE) ) %>%
@@ -166,93 +156,87 @@ stab_dat[[1]] %>%
   summarise(CVlp = weighted.mean(spp_pool_cv, w = patch_cover))
 
 
+### Lamy et al. (2019) functions
 
+# these functions need measurements for all months for all pools
+comp_pools <- 
+  ply_dat %>%
+  mutate(shore_comp_id = paste(shore, composition, sep = "_")) %>%
+  group_by(shore_comp_id, pool) %>%
+  summarise(comp = unique(month) %>% length()) %>%
+  filter(comp < 3) %>%
+  pull(pool)
 
+comp_pools
 
-### testing Wang and Loreau (2016)'s predictions
+# create a data set with only complete pools  
+stab_dat <- 
+  ply_dat %>%
+  filter( !(pool %in% comp_pools) ) 
 
-ply_dat %>%
-  View()
+# at what scale should calculations be done?
+# within shore or between shore?
 
-# within (w) or between shore (b)
-hier <- c("b")
+scale <- c("between")
 
-within <- 
-  list(c("shore", "composition"),
-       c("shore", "composition", "pool"),
-       c("shore", "composition"),
-       c("shore", "composition", "month"),
-       c("shore", "composition"),
-       c("shore", "composition"))
+stab_dat <- 
+  if (scale == "within") {
+    stab_dat %>%
+      mutate(shore_comp_id = paste(shore, composition, sep = "_")) %>%
+      split(., .$shore_comp_id)
+    } else { 
+      split(stab_dat, stab_dat$composition) 
+      }
 
-between <- 
-  list(c("composition"),
-       c("composition", "pool"),
-       c("composition"),
-       c("composition", "month"),
-       c("composition"),
-       c("composition"))
+stab_dat[[1]]
 
-group_vars <- 
-  if (hier == "w") {
-    within
+stab_out <- 
+  lapply(stab_dat, function(x) {
+  
+  y <- part_stab_comp(Y = select(x, foc_spp),
+                 s = length(unique(x$pool)),
+                 t = length(unique(x$month)))
+  y$part
+  
+} )
+
+# join these stability metrics to the richness data
+
+stab_out <- 
+  stab_out %>%
+  bind_rows(.id = "comp_id") %>% 
+  as_tibble()
+
+# create moderator variables
+mod_vars <- 
+  if (scale == "within") {
+    ply_dat %>%
+      select(shore, composition, species_richness) %>%
+      mutate(comp_id = paste(shore, composition, sep = "_")) %>%
+      distinct()
   } else {
-    between
+    ply_dat %>%
+      select(composition, species_richness) %>%
+      distinct() %>%
+      rename(comp_id = "composition")
   }
+  
+stab_full <- 
+  full_join(mod_vars, stab_out, c("comp_id"))
 
 
-# calculate mean alpha diversity and gamma diversity across pool replicates within shore and treatment
-loc_reg_div <- 
-  ply_dat %>%
-  group_by_at(vars(group_vars[[1]])) %>%
-  summarise(mean_alpha = mean(species_richness),
-            gamma_div = mean(species_richness)) %>%
-  ungroup()
-
-# calculate alpha cv
-alpha_cv <- 
-  ply_dat %>%
-  group_by_at(vars(group_vars[[2]])) %>%
-  summarise(alpha_cv = (sd(totcover, na.rm = TRUE)/mean(totcover, na.rm = TRUE)),
-            mean_totcover = mean(totcover, na.rm = TRUE) ) %>%
-  ungroup() %>%
-  group_by_at(vars(group_vars[[3]])) %>%
-  summarise(alpha_cv = weighted.mean(alpha_cv, w = mean_totcover, na.rm = TRUE)) %>%
-  ungroup() %>%
-  mutate(alpha_cv = (alpha_cv^2))
-
-
-# calculate gamma cv
-
-gamma_cv <- 
-  ply_dat %>%
-  group_by_at(vars(group_vars[[4]])) %>%
-  summarise(gamma_cv = mean(totcover, na.rm = TRUE)) %>%
-  ungroup() %>%
-  group_by_at(vars(group_vars[[5]])) %>%
-  summarise(gamma_cv = sd(gamma_cv, na.rm = TRUE)/mean(gamma_cv, na.rm = TRUE)) %>%
-  ungroup() %>%
-  mutate(gamma_cv = (gamma_cv^2))
-
-# join the alpha and gamma cv data and calculate beta cv
-cv_scales <- 
-  full_join(alpha_cv, gamma_cv, by = group_vars[[6]]) %>%
-  mutate(beta_cv = (alpha_cv/gamma_cv))
-
-# join the loc_reg diversity to the cv_scales
-div_cv_scales <- 
-  full_join(loc_reg_div,
-            cv_scales,
-            by = group_vars[[6]])
-
-div_cv_scales %>%
-  gather(alpha_cv, gamma_cv, beta_cv, key = "div", value = "cv") %>%
+stab_full %>%
+  gather(-comp_id, -species_richness,
+         key = "stability", value = "metric") %>%
   ggplot(data = .,
-         mapping = aes(x = mean_alpha, y = cv)) +
-  geom_point() +
+         mapping = aes(x = species_richness, y = metric)) +
+  geom_jitter() +
   geom_smooth(method = "lm") +
-  facet_wrap(~div, scales = "free") +
+  facet_wrap(~stability, scales = "free") +
   theme_classic()
+
+
+
 
 
 
