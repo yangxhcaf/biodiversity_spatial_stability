@@ -113,7 +113,8 @@ land_comb <-
 names(land_comb) <- paste0("het_", c(1:envnum))
 
 # we have a list with different levels of heterogeneity all combinations of environments in columns
-plot_values_wide <- plot_values_df %>%
+plot_values_wide <- 
+  plot_values_df %>%
   spread(environment, functioning)
 
 
